@@ -58,22 +58,29 @@ class PathAgent(DriveInterface):
         targetPodLocation = tuple(sensor_data[SensorData.TARGET_POD_LOCATION]) if sensor_data[SensorData.TARGET_POD_LOCATION] is not None else None
         driveLiftedPodPairs = sensor_data[SensorData.DRIVE_LIFTED_POD_PAIRS]
 
+        # Check if the pod has been lifted
+        self.is_pod_lifted = any(pair[0] == self.game_id for pair in driveLiftedPodPairs)
+
         try:
             if self.need_to_find_target_pod:
-                if targetPodLocation:
-                    if currLocation == targetPodLocation:
+                if targetPodLocation and not self.is_pod_lifted:
+                    if (currLocation == targetPodLocation):
+                        print("POD FOUND")
                         return DriveMove.LIFT_POD
-                    return self.move_towards_target(currLocation, targetPodLocation, driveLocations)
-                
-                # Check if the pod has been lifted
-                is_pod_lifted = any(pair[0] == self.game_id for pair in driveLiftedPodPairs)
-                
-                if is_pod_lifted:
+                    else:
+                        print("GOING TO POD")
+                        return self.move_towards_target(currLocation, targetPodLocation, driveLocations)
+                 
+                elif self.is_pod_lifted:
                     if currLocation == goalLocation:
+                        print("Dropping POD")
                         return DriveMove.DROP_POD
-                    return self.move_towards_target(currLocation, goalLocation, driveLocations)
-
+                    else:
+                        print("Carrying POD")
+                        return self.move_towards_target_carrying_pod(currLocation, goalLocation, driveLocations)
+                
             return self.move_towards_target(currLocation, goalLocation, driveLocations)
+        
         except Exception as e:
             raise Exception(f"get_next_move in PathAgent failed: {str(e)}")
 
@@ -94,4 +101,62 @@ class PathAgent(DriveInterface):
             }[move]
             if new_location not in driveLocations:
                 return move
+        return DriveMove.NONE
+
+    def move_towards_target_carrying_pod(self, currLocation, targetLocation, driveLocations) -> DriveMove:
+        dx, dy = targetLocation[0] - currLocation[0], targetLocation[1] - currLocation[1]
+        moves = []
+        if dx > 0: moves.append(DriveMove.RIGHT)
+        if dx < 0: moves.append(DriveMove.LEFT)
+        if dy > 0: moves.append(DriveMove.UP)
+        if dy < 0: moves.append(DriveMove.DOWN)
+
+        # Check if a location or its surrounding is occupied
+        def is_blocked_or_adjacent_to_block(location):
+            surrounding_blocks = [
+                (location[0] + 1, location[1]),
+                (location[0] - 1, location[1]),
+                (location[0], location[1] + 1),
+                (location[0], location[1] - 1)
+            ]
+            return location in driveLocations or any(block in driveLocations for block in surrounding_blocks)
+
+        # If you're directly adjacent to another drive, try to move away
+        def move_away_from_drives():
+            possible_moves = [DriveMove.RIGHT, DriveMove.LEFT, DriveMove.UP, DriveMove.DOWN]
+            for move in possible_moves:
+                new_location = {
+                    DriveMove.RIGHT: (currLocation[0] + 1, currLocation[1]),
+                    DriveMove.LEFT: (currLocation[0] - 1, currLocation[1]),
+                    DriveMove.UP: (currLocation[0], currLocation[1] + 1),
+                    DriveMove.DOWN: (currLocation[0], currLocation[1] - 1)
+                }[move]
+
+                if not new_location in driveLocations:
+                    return move
+            return None
+
+        # First, check if you're directly next to another drive. If so, try to move away.
+        if any(block in driveLocations for block in [
+                (currLocation[0] + 1, currLocation[1]),
+                (currLocation[0] - 1, currLocation[1]),
+                (currLocation[0], currLocation[1] + 1),
+                (currLocation[0], currLocation[1] - 1)
+            ]):
+            move = move_away_from_drives()
+            if move:
+                return move
+
+        # Normal target-seeking logic
+        for move in moves:
+            new_location = {
+                DriveMove.RIGHT: (currLocation[0] + 1, currLocation[1]),
+                DriveMove.LEFT: (currLocation[0] - 1, currLocation[1]),
+                DriveMove.UP: (currLocation[0], currLocation[1] + 1),
+                DriveMove.DOWN: (currLocation[0], currLocation[1] - 1)
+            }[move]
+
+            if not is_blocked_or_adjacent_to_block(new_location):
+                return move
+
         return DriveMove.NONE
