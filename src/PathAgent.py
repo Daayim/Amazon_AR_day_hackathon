@@ -4,11 +4,11 @@ from src.DriveState import DriveState
 from src.Constants import DriveMove, SensorData
 
 
-class YourAgent(DriveInterface):
+class PathAgent(DriveInterface):
 
     def __init__(self, game_id: int, is_advanced_mode: bool):
         """
-        Constructor for YourAgent
+        Constructor for PathAgent
 
         Arguments:
         game_id -- a unique value passed to the player drive, you do not have to do anything with it, but will have access.
@@ -51,4 +51,47 @@ class YourAgent(DriveInterface):
             DriveMove.DROP_POD – If a pod is in the same tile, drop it. The pod will now stay in this position until it is picked up
 
         """
-        raise Exception('get_next_move in YourAgent not implemented')
+
+        currLocation = tuple(sensor_data[SensorData.PLAYER_LOCATION])
+        goalLocation = tuple(sensor_data[SensorData.GOAL_LOCATION])
+        driveLocations = set(tuple(loc) for loc in sensor_data[SensorData.DRIVE_LOCATIONS])
+        targetPodLocation = tuple(sensor_data[SensorData.TARGET_POD_LOCATION]) if sensor_data[SensorData.TARGET_POD_LOCATION] is not None else None
+        driveLiftedPodPairs = sensor_data[SensorData.DRIVE_LIFTED_POD_PAIRS]
+
+        try:
+            if self.need_to_find_target_pod:
+                if targetPodLocation:
+                    if currLocation == targetPodLocation:
+                        return DriveMove.LIFT_POD
+                    return self.move_towards_target(currLocation, targetPodLocation, driveLocations)
+                
+                # Check if the pod has been lifted
+                is_pod_lifted = any(pair[0] == self.game_id for pair in driveLiftedPodPairs)
+                
+                if is_pod_lifted:
+                    if currLocation == goalLocation:
+                        return DriveMove.DROP_POD
+                    return self.move_towards_target(currLocation, goalLocation, driveLocations)
+
+            return self.move_towards_target(currLocation, goalLocation, driveLocations)
+        except Exception as e:
+            raise Exception(f"get_next_move in PathAgent failed: {str(e)}")
+
+    def move_towards_target(self, currLocation, targetLocation, driveLocations) -> DriveMove:
+        dx, dy = targetLocation[0] - currLocation[0], targetLocation[1] - currLocation[1]
+        moves = []
+        if dx > 0: moves.append(DriveMove.RIGHT)
+        if dx < 0: moves.append(DriveMove.LEFT)
+        if dy > 0: moves.append(DriveMove.UP)
+        if dy < 0: moves.append(DriveMove.DOWN)
+
+        for move in moves:
+            new_location = {
+                DriveMove.RIGHT: (currLocation[0] + 1, currLocation[1]),
+                DriveMove.LEFT: (currLocation[0] - 1, currLocation[1]),
+                DriveMove.UP: (currLocation[0], currLocation[1] + 1),
+                DriveMove.DOWN: (currLocation[0], currLocation[1] - 1)
+            }[move]
+            if new_location not in driveLocations:
+                return move
+        return DriveMove.NONE
